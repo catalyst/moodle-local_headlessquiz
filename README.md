@@ -6,9 +6,12 @@ The primary purpose of this plugin is to facilitate running quizzes on Moodle in
 Previously, up to 6 webservice calls were required to just start a single quiz attempt, making this quite difficult. This plugin combines this functionality into a single call, streamlining the process.
 
 ## Branches
-| Version | Branch            |   |   |   |
-|---------|-------------------|---|---|---|
-| 4.0     | MOODLE_400_STABLE |   |   |   |
+
+![GitHub Workflow Status (branch)](https://img.shields.io/github/workflow/status/catalyst/moodle-local_headlessquiz/ci/MOODLE_400_STABLE?label=ci)
+
+| Version | Branch            |
+|---------|-------------------|
+| 4.0     | MOODLE_400_STABLE |
 
 ## Installation
 
