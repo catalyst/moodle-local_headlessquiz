@@ -28,4 +28,4 @@ defined('MOODLE_INTERNAL') || die();
 $plugin->version   = 2022041908;                 // The current plugin version (Date: YYYYMMDDXX).
 $plugin->requires  = 2022041904;                 // Requires this Moodle version.
 $plugin->component = 'local_headlessquiz';       // Full name of the plugin (used for diagnostics).
-$plugin->supported = [400];
+$plugin->supported = [40, 41];
