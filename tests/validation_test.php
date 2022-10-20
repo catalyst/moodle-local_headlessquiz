@@ -182,4 +182,19 @@ class validation_test extends \advanced_testcase {
         $this->assertEquals(\local_headlessquiz\api::ERROR_VALIDATION, $res->error->type);
         $this->assertFalse(isset($res->data));
     }
+
+    /**
+     * Tests quiz module where the course was deleted.
+     * Expects a validation error.
+     */
+    public function test_quiz_course_doesnt_exist() {
+        // Quiz and course are made in setup. Delete the course here.
+        delete_course($this->course->id, false);
+
+        $res = \local_headlessquiz\api::get_headless_quiz($this->quiz->cmid, $this->user->id);
+
+        // Should return validation error.
+        $this->assertEquals(\local_headlessquiz\api::ERROR_VALIDATION, $res->error->type);
+        $this->assertFalse(isset($res->data));
+    }
 }
