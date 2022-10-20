@@ -135,7 +135,7 @@ class api_test extends \advanced_testcase {
 
     public function test_with_inprogress_previous_attempt() {
         // Quiz is already made in setup. Start an attempt here (outside of the API).
-        $attempt = $this->start_attempt();
+        $this->start_attempt();
 
         // Get quiz made in setUp(), forcenew = false.
         $res = \local_headlessquiz\api::get_headless_quiz($this->quiz->cmid, $this->user->id, false);

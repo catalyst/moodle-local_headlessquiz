@@ -68,7 +68,8 @@ class api {
             }
 
             // Get and validate the user.
-            $user = self::get_user($userid);
+            $user = \core_user::get_user($userid);
+            $user = !empty($user) ? $user : null;
             [$validuser, $usererror] = self::validate_user($user, $quiz->course);
 
             if (!$validuser) {
@@ -83,7 +84,8 @@ class api {
 
                 // If previous attempt was inprogress, abandon it.
                 if (!empty($attempt) && $attempt->state === 'inprogress') {
-                    self::abandon_attempt($attempt);
+                    $attemptobj = \quiz_attempt::create($attempt->id);
+                    $attemptobj->process_abandon(time(), false);
                 }
 
                 // Start a new attempt.
@@ -179,16 +181,7 @@ class api {
      * @return array array of valid (false) and error message
      */
     private static function form_validation_error(string $code): array {
-        return [ false, get_string('error:validation:'.$code, 'local_headlessquiz') ];
-    }
-
-    /**
-     * Abandons a given attempt
-     * @param object $attempt
-     */
-    private static function abandon_attempt(object $attempt): void {
-        $attemptobj = \quiz_attempt::create($attempt->id);
-        $attemptobj->process_abandon(time(), false);
+        return [false, get_string('error:validation:'.$code, 'local_headlessquiz')];
     }
 
     /**
@@ -289,20 +282,7 @@ class api {
         }
 
         // Return valid, no error.
-        return [ true, null ];
-    }
-
-    /**
-     * Gets a user
-     * @param int $userid
-     * @return ?object $user object or null
-     */
-    private static function get_user(int $userid): ?object {
-        global $DB;
-        $user = $DB->get_record('user', ['id' => $userid]);
-
-        // Typehinting indicates we must return object or null, so cast false to null.
-        return !empty($user) ? $user : null;
+        return [true, null];
     }
 
     /**
@@ -325,7 +305,7 @@ class api {
         }
 
         // Return valid, no error.
-        return [ true, null ];
+        return [true, null];
     }
 
     /**
