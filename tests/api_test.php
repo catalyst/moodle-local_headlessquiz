@@ -81,6 +81,10 @@ class api_test extends \advanced_testcase {
         return $attemptobj;
     }
 
+    /**
+     * Tests getting the headless quiz with no previous attempt for a user
+     * Expects a new attempt to be created.
+     */
     public function test_with_no_previous_attempt() {
         // Get quiz made in setUp(), forcenew = false.
         $res = \local_headlessquiz\api::get_headless_quiz($this->quiz->cmid, $this->user->id, false);
@@ -133,6 +137,10 @@ class api_test extends \advanced_testcase {
         $this->assertEquals($expectedata, $res->data);
     }
 
+    /**
+     * Tests getting the headless quiz with a previous inprogress attempt
+     * Expects the previous attempt to be returned
+     */
     public function test_with_inprogress_previous_attempt() {
         // Quiz is already made in setup. Start an attempt here (outside of the API).
         $this->start_attempt();
@@ -188,6 +196,10 @@ class api_test extends \advanced_testcase {
         $this->assertEquals($expectedata, $res->data);
     }
 
+    /**
+     * Tests getting the headless quiz with a previous finished event.
+     * Expects that the previous attempt be returned.
+     */
     public function test_with_finished_previous_attempt() {
         // Quiz is already made in setup. Start an attempt here (outside of the API).
         $attemptobj = $this->start_attempt();
@@ -243,6 +255,10 @@ class api_test extends \advanced_testcase {
         $this->assertEquals($expectedata, $res->data);
     }
 
+    /**
+     * Tests with $forcenew=true getting the headless quiz with no previous attempt
+     * Expects a new attempt to be created.
+     */
     public function test_with_no_previous_attempt_forcenew() {
         // Get quiz made in setUp(), forcenew = true.
         // Should do nothing different, since there is not a previous attempt.
@@ -296,6 +312,10 @@ class api_test extends \advanced_testcase {
         $this->assertEquals($expectedata, $res->data);
     }
 
+    /**
+     * Tests with $forcenew=true getting the headless quiz with a previous inprogress attempt
+     * Expects a new attempt to be created and the previous one to be abandonded.
+     */
     public function test_with_inprogress_previous_attempt_forcenew() {
         // Quiz is already made in setup. Start an attempt here (outside of the API).
         $this->start_attempt();
@@ -355,6 +375,10 @@ class api_test extends \advanced_testcase {
         $this->assertEquals($expectedata, $res->data);
     }
 
+    /**
+     * Tests with $forcenew=true getting the headless quiz with a previous finished attempt
+     * Expects a new attempt to be created and the previous to remain finished.
+     */
     public function test_with_finished_previous_attempt_forcenew() {
         // Quiz is already made in setup. Start an attempt here (outside of the API).
         $attempt = $this->start_attempt();

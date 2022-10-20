@@ -51,6 +51,10 @@ class validation_test extends \advanced_testcase {
             'gradepass' => 50.0]);
     }
 
+    /**
+     * Tests getting a headless quiz when the requested user doesn't exist.
+     * Expects a validation error.
+     */
     public function test_user_doesnt_exist() {
         // Call API with user ID that cannot exist.
         $res = \local_headlessquiz\api::get_headless_quiz($this->quiz->cmid, -1);
@@ -61,6 +65,10 @@ class validation_test extends \advanced_testcase {
         $this->assertFalse(isset($res->data));
     }
 
+    /**
+     * Tests getting a headless quiz when the quiz doesn't exist.
+     * Expects a validation error.
+     */
     public function test_quiz_doesnt_exist() {
         // Delete the quiz created in SetUp().
         course_delete_module($this->quiz->cmid);
@@ -74,6 +82,10 @@ class validation_test extends \advanced_testcase {
         $this->assertFalse(isset($res->data));
     }
 
+    /**
+     * Tests getting a headless quiz when the requested coursemodule is not a quiz.
+     * Expects a validation error.
+     */
     public function test_module_is_not_quiz() {
         // Create a different module e.g. label.
         $lg = $this->dg->get_plugin_generator('mod_label');
@@ -88,6 +100,10 @@ class validation_test extends \advanced_testcase {
         $this->assertFalse(isset($res->data));
     }
 
+    /**
+     * Tests getting a headless quiz when the requested user isn't enrolled in the course that the coursemodule is in.
+     * Expects a validation error.
+     */
     public function test_user_not_enrolled_in_course() {
         // Create a new user that is not enrolled in the course.
         $unenrolleduser = $this->dg->create_user();
@@ -101,6 +117,10 @@ class validation_test extends \advanced_testcase {
         $this->assertFalse(isset($res->data));
     }
 
+    /**
+     * Tests getting a headless quiz when the quiz contains unsupported question types.
+     * Expects a validation error.
+     */
     public function test_quiz_question_type_validation() {
         // We only support specific types of questions.
         $supportedtypes = \local_headlessquiz\api::SUPPORTED_QTYPES;
@@ -140,6 +160,10 @@ class validation_test extends \advanced_testcase {
         }
     }
 
+    /**
+     * Tests quiz that has more than one page.
+     * Expects a validation error.
+     */
     public function test_quiz_has_more_than_1_page() {
         // Make a quiz with 1 question per page.
         $quiz = $this->qg->create_instance(['course' => $this->course, 'questionsperpage' => 1]);
