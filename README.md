@@ -11,6 +11,87 @@ There is no interface to this plugin, it is interacted with purely via webservic
 3. The headless quiz function is attached to the `moodle_mobile_app` webservice, so ensure that it is enabled.
 4. Call the webservice: `/webservice/rest/server.php?wstoken=[TOKEN]&wsfunction=local_headlessquiz_get_attempt&cmid=[CMID]&moodlewsrestformat=json` (replacing variables in brackets where necessary)
 
+
+<details>
+<summary><b>Example response from webservice function</b></summary>
+
+```json
+{
+   "data":{
+      "user":{
+         "id":18
+      },
+      "quiz":{
+         "id":1,
+         "cmid":66,
+         "passinggrade":10,
+         "questions":[
+            {
+               "id":2,
+               "name":"True or false 1",
+               "questiontext":"<p dir=\"ltr\" style=\"text-align: left;\">Is this question true? Select True<br><\/p>"
+            },
+            {
+               "id":3,
+               "name":"multiple choice test 1",
+               "questiontext":"<p dir=\"ltr\" style=\"text-align: left;\">multiple choice test 1<br><\/p>"
+            },
+            {
+               "id":5,
+               "name":"Test3",
+               "questiontext":"<p dir=\"ltr\" style=\"text-align: left;\">test<br><\/p>"
+            },
+            {
+               "id":4,
+               "name":"Short answer",
+               "questiontext":"<p dir=\"ltr\" style=\"text-align: left;\">Short answer<br><\/p>"
+            }
+         ]
+      },
+      "attempt":{
+         "id":12,
+         "state":"finished",
+         "timestart":1666065744,
+         "timemodified":1666065814,
+         "grade":6.0416699999999999,
+         "number":5,
+         "responses":[
+            {
+               "questionid":2,
+               "state":"gradedright",
+               "mark":1,
+               "status":"Complete",
+               "data":"{\"answer\":\"1\"}"
+            },
+            {
+               "questionid":3,
+               "state":"gradedpartial",
+               "mark":1.25,
+               "status":"Complete",
+               "data":"{\"answer\":\"1\"}"
+            },
+            {
+               "questionid":5,
+               "state":"gaveup",
+               "mark":null,
+               "status":"Not answered",
+               "data":"{\"_order\":\"12,14,13,11\"}"
+            },
+            {
+               "questionid":4,
+               "state":"gaveup",
+               "mark":null,
+               "status":"Not answered",
+               "data":null
+            }
+         ]
+      }
+   }
+}
+```
+</details>
+
+
 ### Behaviour
 When the function is called the following happens:
 - If no attempt exists for the user, a new attempt is started
