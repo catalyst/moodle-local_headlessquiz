@@ -122,6 +122,8 @@ class validation_test extends \advanced_testcase {
      * Expects a validation error.
      */
     public function test_quiz_question_type_validation() {
+        global $DB;
+
         // We only support specific types of questions.
         $supportedtypes = \local_headlessquiz\api::SUPPORTED_QTYPES;
         $category = $this->qsg->create_question_category();
@@ -131,6 +133,7 @@ class validation_test extends \advanced_testcase {
             $quiz = $this->qg->create_instance(['course' => $this->course, 'grade' => 100.0, 'sumgrades' => 2,
                 'gradepass' => 50.0]);
             $question = $this->qsg->create_question($qtype, null, ['category' => $category->id, 'questiontext' => 'text']);
+            $DB->update_Record('question', ['id' => $question->id, 'questiontext' => 'test']);
             quiz_add_quiz_question($question->id, $quiz);
 
             // Call api.
@@ -148,6 +151,7 @@ class validation_test extends \advanced_testcase {
             // Create quiz with this question type.
             $quiz = $this->qg->create_instance(['course' => $this->course]);
             $question = $this->qsg->create_question($qtype, null, ['category' => $category->id]);
+            $DB->update_record('question', ['id' => $question->id, 'questiontext' => 'test']);
             quiz_add_quiz_question($question->id, $quiz);
 
             // Call api.
@@ -196,5 +200,64 @@ class validation_test extends \advanced_testcase {
         // Should return validation error.
         $this->assertEquals(\local_headlessquiz\api::ERROR_VALIDATION, $res->error->type);
         $this->assertFalse(isset($res->data));
+    }
+
+    /**
+     * Tests questions with bad content
+     * Expects a validation error.
+     */
+    public function test_question_bad_content() {
+        global $DB;
+        $category = $this->qsg->create_question_category();
+
+        // These texts contain disallowed elements.
+        $badquestiontexts = [
+            '<p><img src="@@PLUGINFILE@@/test.png"><br></p>',
+            '<p><img src="test.png"><br></p>',
+            '<p><img src="https://via.placeholder.com/350x150"><br></p>',
+            '<p><br></p><div class="h5p-placeholder" contenteditable="false">
+            @@PLUGINFILE@@/interactive-video-2-618.h5p
+            </div><p><br></p>'
+        ];
+
+        // These texts are similar to non-allowed texts, but are in fact allowed.
+        $allowedtexts = [
+            'test.png',
+            '<p>test.png</p>',
+            'pluginfile',
+            'PLUGINFILE',
+            '@@abc@@',
+            '@@@@',
+            '@@'
+        ];
+
+        foreach ($badquestiontexts as $badtext) {
+            $quiz = $this->qg->create_instance(['course' => $this->course, 'questionsperpage' => 1]);
+            $question1 = $this->qsg->create_question(\local_headlessquiz\api::SUPPORTED_QTYPES[0], null,
+                ['category' => $category->id]);
+            quiz_add_quiz_question($question1->id, $quiz);
+            $DB->update_record('question', ['id' => $question1->id, 'questiontext' => $badtext]);
+
+            $res = \local_headlessquiz\api::get_headless_quiz($quiz->cmid, $this->user->id);
+
+            // Should return validation error.
+            $this->assertEquals(\local_headlessquiz\api::ERROR_VALIDATION, $res->error->type);
+            $this->assertFalse(isset($res->data));
+        }
+
+        foreach ($allowedtexts as $goodtext) {
+            $quiz = $this->qg->create_instance(['course' => $this->course, 'questionsperpage' => 1, 'grade' => 100,
+                'sumgrades' => 2]);
+            $question1 = $this->qsg->create_question(\local_headlessquiz\api::SUPPORTED_QTYPES[0], null,
+                ['category' => $category->id]);
+            quiz_add_quiz_question($question1->id, $quiz);
+            $DB->update_record('question', ['id' => $question1->id, 'questiontext' => $goodtext]);
+
+            $res = \local_headlessquiz\api::get_headless_quiz($quiz->cmid, $this->user->id);
+
+            // Should not return an error.
+            $this->assertFalse(isset($res->error));
+            $this->assertTrue(isset($res->data));
+        }
     }
 }

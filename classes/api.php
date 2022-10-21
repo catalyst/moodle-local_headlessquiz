@@ -281,6 +281,32 @@ class api {
             return self::form_validation_error('invalidqtype');
         }
 
+        // This won't get every single possible case, but it covers the most common ones.
+        $invalidquestioncontents = array_filter($questions, function($q) {
+            // Question or contents is empty, which is invalid.
+            if (empty($q) || empty($q->questiontext)) {
+                return true;
+            }
+
+            // Check for various things using regex.
+            $pluginfileplaceholders = preg_match("/(@@PLUGINFILE@@)/", $q->questiontext);
+
+            // Match image tags (but not image links, since it could be a hyperlink which technically is allowed).
+            $imgtags = preg_match("/(<img)/", $q->questiontext);
+
+            $checks = [
+                $pluginfileplaceholders,
+                $imgtags
+            ];
+
+            // See if any of the regex patterns matched.
+            return in_array(1, $checks);
+        });
+
+        if (!empty($invalidquestioncontents)) {
+            return self::form_validation_error('invalidqcontent');
+        }
+
         // Return valid, no error.
         return [true, null];
     }

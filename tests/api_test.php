@@ -27,6 +27,8 @@ namespace local_headlessquiz;
  */
 class api_test extends \advanced_testcase {
     public function setUp(): void {
+        global $DB;
+
         $this->setAdminUser();
         $this->resetAfterTest(true);
 
@@ -43,7 +45,7 @@ class api_test extends \advanced_testcase {
             'gradepass' => 50.0]);
         $this->category = $this->qsg->create_question_category();
         $this->question = $this->qsg->create_question(\local_headlessquiz\api::SUPPORTED_QTYPES[0], null,
-            ['category' => $this->category->id, 'questiontext' => 'text']);
+            ['category' => $this->category->id]);
         quiz_add_quiz_question($this->question->id, $this->quiz);
     }
 
