@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Version information for the headless quiz plugin
+ * local_headlessquiz webservices
  *
  * @package    local_headlessquiz
  * @copyright  2022 Catalyst IT
@@ -23,9 +23,14 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
+defined('MOODLE_INTERNAL') || die;
 
-$plugin->version   = 2022041908;                 // The current plugin version (Date: YYYYMMDDXX).
-$plugin->requires  = 2022041904;                 // Requires this Moodle version.
-$plugin->component = 'local_headlessquiz';       // Full name of the plugin (used for diagnostics).
-$plugin->supported = [40, 41];
+$functions = [
+    'local_headlessquiz_get_attempt' => [
+        'classname' => 'local_headlessquiz\external\headless_quiz_api',
+        'methodname' => 'get',
+        'description' => get_string('wsfunction:local_headlessquiz_get_attempt', 'local_headlessquiz'),
+        'type' => 'write',
+        'services' => array(MOODLE_OFFICIAL_MOBILE_SERVICE)
+    ]
+];

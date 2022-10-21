@@ -13,9 +13,8 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
-
 /**
- * Version information for the headless quiz plugin
+ * local_headlessquiz lang strings
  *
  * @package    local_headlessquiz
  * @copyright  2022 Catalyst IT
@@ -23,9 +22,13 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
-
-$plugin->version   = 2022041908;                 // The current plugin version (Date: YYYYMMDDXX).
-$plugin->requires  = 2022041904;                 // Requires this Moodle version.
-$plugin->component = 'local_headlessquiz';       // Full name of the plugin (used for diagnostics).
-$plugin->supported = [40, 41];
+$string['pluginname'] = 'Headless Quiz';
+$string['privacy:metadata'] = 'Privacy provider';
+$string['error:validation:missinguser'] = "User doesn't exist";
+$string['error:validation:missingquiz'] = "Quiz doesn't exist";
+$string['error:validation:notaquiz'] = "Module was not a quiz";
+$string['error:validation:usernotenrolled'] = "User not enrolled in course";
+$string['error:validation:invalidqtype'] = "Unsupported question type";
+$string['error:validation:invalidqcontent'] = "Invalid question content. Only raw text content is supported";
+$string['error:validation:notsinglepage'] = "Quiz must be a single page. Multiple pages are not supported.";
+$string['wsfunction:local_headlessquiz_get_attempt'] = "Get headless quiz attempt";
