@@ -73,7 +73,7 @@ This plugin was developed by Catalyst IT Australia:
 
 https://www.catalyst-au.net/
 
-![Catalyst IT](pix/catalyst.svg)
+<img alt="Catalyst IT" src="https://cdn.rawgit.com/CatalystIT-AU/moodle-auth_saml2/MOODLE_39_STABLE/pix/catalyst-logo.svg" width="400">
 
 With funding provided by Commerce Tools:
 
