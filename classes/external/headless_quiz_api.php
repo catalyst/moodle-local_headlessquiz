@@ -65,30 +65,43 @@ class headless_quiz_api extends \external_api {
         $questionstructure = new \external_single_structure([
             'id' => new \external_value(PARAM_INT, 'Question ID'),
             'name' => new \external_value(PARAM_TEXT, 'Question Name'),
-            'questiontext' => new \external_value(PARAM_RAW, 'Question Text')
-         ], 'Question');
+            'questiontext' => new \external_value(PARAM_RAW, 'Question Text'),
+            'type' => new \external_value(PARAM_TEXT, 'Question type'),
+            'slot' => new \external_value(PARAM_INT, 'Question slot'),
+            'options' => new \external_value(PARAM_RAW, 'JSON encoded option data')
+        ], 'Question');
 
         $quizstructure = new \external_single_structure([
             'id' => new \external_value(PARAM_INT, 'Quiz ID'),
+            'name' => new \external_value(PARAM_TEXT, 'Quiz name'),
             'cmid' => new \external_value(PARAM_INT, 'Course module ID'),
-            'passinggrade' => new \external_value(PARAM_FLOAT, 'Grade required to pass', VALUE_OPTIONAL, null),
+            'gradetopass' => new \external_value(PARAM_FLOAT, 'Grade required to pass the quiz activity', VALUE_OPTIONAL, null),
+            'bestgrade' => new \external_value(PARAM_FLOAT, 'The best grade a user has achieved in this quiz', VALUE_DEFAULT, null),
             'questions' => new \external_multiple_structure($questionstructure, 'Quiz Questions', VALUE_DEFAULT, [])
         ], 'Quiz');
 
         $responsestructure = new \external_single_structure([
             'questionid' => new \external_value(PARAM_INT, 'Question ID'),
             'state' => new \external_value(PARAM_TEXT, 'Question State', VALUE_DEFAULT, null),
-            'mark' => new \external_value(PARAM_FLOAT, 'Question Mark', VALUE_DEFAULT, null),
+            'mark' => new \external_value(PARAM_FLOAT, 'Question attempt mark', VALUE_DEFAULT, null),
             'status' => new \external_value(PARAM_TEXT, 'Question Status'),
-            'data' => new \external_value(PARAM_TEXT, 'Question Data (response)', VALUE_DEFAULT, null)
+            'data' => new \external_value(PARAM_TEXT, 'Question Data (response)', VALUE_DEFAULT, null),
+            'slot' => new \external_value(PARAM_INT, 'Slot ID'),
+            'html' => new \external_value(PARAM_RAW, 'Question and response HTML'),
+            'sequencecheck' => new \external_value(PARAM_INT, 'Sequence check number'),
+            'feedback' => new \external_value(PARAM_RAW, 'Feedback for question (html)'),
         ], 'Quiz attempt question response');
 
         $attemptstructure = new \external_single_structure([
             'id' => new \external_value(PARAM_INT, 'Attempt ID'),
             'state' => new \external_value(PARAM_TEXT, 'Attempt state'),
+            'feedback' => new \external_value(PARAM_RAW, 'Attempt feedback', VALUE_DEFAULT, null),
+            'summarks' => new \external_value(PARAM_FLOAT, 'Sum of all marks in the attempt', VALUE_DEFAULT, null),
+            'passed' => new \external_value(PARAM_BOOL, 'Does this attempts grade meet the required passing grade for the quiz',
+                VALUE_DEFAULT, null),
+            'scaledgrade' => new \external_value(PARAM_FLOAT, 'Summarks scaled according to the quiz', VALUE_DEFAULT, null),
             'timestart' => new \external_value(PARAM_INT, 'Time started'),
             'timemodified' => new \external_value(PARAM_INT, 'Time modified'),
-            'grade' => new \external_value(PARAM_FLOAT, 'Attempt Grade', VALUE_DEFAULT, null),
             'number' => new \external_value(PARAM_INT, 'Attempt Number'),
             'responses' => new \external_multiple_structure($responsestructure, 'Responses', VALUE_DEFAULT, [])
         ], 'Quiz attempt');

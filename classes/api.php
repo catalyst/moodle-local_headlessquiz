@@ -76,6 +76,8 @@ class api {
                 return self::form_validation_error_response($usererror);
             }
 
+            $quizobj = \quiz::create($quiz->instance);
+
             // Get latest attempt for this user.
             $attempt = self::get_latest_attempt($user, $quiz);
 
@@ -85,28 +87,33 @@ class api {
                 // If previous attempt was inprogress, abandon it.
                 if (!empty($attempt) && $attempt->state === 'inprogress') {
                     $attemptobj = \quiz_attempt::create($attempt->id);
-                    $attemptobj->process_abandon(time(), false);
+                    $attemptobj->process_finish(time(), false);
                 }
 
                 // Start a new attempt.
                 $nextattemptnumber = empty($attempt) ? 1 : $attempt->attempt + 1;
-                $attempt = self::start_attempt($user, $quiz, $nextattemptnumber);
+                $attempt = self::start_attempt($user, $quiz, $nextattemptnumber, $attempt);
             }
+            $attemptobj = \quiz_attempt::create($attempt->id);
 
             // Get attempt review data (attempts, grade, state, status, etc...).
-            $attemptreview = self::get_attempt_review_data($attempt->id);
+            $attemptquestionreview = self::get_attempt_review_data($attempt->id);
 
-            // Get grades for quiz.
-            $grade = \mod_quiz_external::get_user_best_grade($quiz->instance, $user->id);
-
-            $quizobj = \quiz::create($quiz->instance);
+            // Get all the quiz questions.
             $quizobj->preload_questions();
             $quizobj->load_questions();
             $questions = $quizobj->get_questions();
 
+            // Get the attempt feedback.
+            $attemptdata = self::get_attempt_data($attemptobj);
+
+            // Get the quiz grade data from the gradebook.
+            $gradedata = self::get_grade_data($quizobj, $userid);
+
             // Format and return the response.
             return (object) [
-                'data' => self::format_response($quiz, $user, $attempt, $attemptreview, $grade, $questions)
+                'data' => self::format_response($quiz, $user, $attempt, $attemptquestionreview, $questions, $attemptdata,
+                    $gradedata)
             ];
         } catch (\Exception $e) {
             // Unhandled error, return error message.
@@ -120,43 +127,110 @@ class api {
     }
 
     /**
+     * Get the grade data for the quiz and user
+     * @param \quiz $quizobj
+     * @param int $userid
+     * @return array array of gradetopass and bestgrade
+     */
+    private static function get_grade_data(\quiz $quizobj, int $userid) {
+        $gradedata = \mod_quiz_external::get_user_best_grade($quizobj->get_quizid(), $userid);
+
+        // We calculate the best grade manually, since the calculation in get_user_best_grade is not always correct.
+        $attempts = quiz_get_user_attempts($quizobj->get_quizid(), $userid);
+        $bestgrade = quiz_calculate_best_grade($quizobj->get_quiz(), $attempts);
+        $bestgrade = quiz_rescale_grade($bestgrade, $quizobj->get_quiz(), false);
+
+        return [
+            'gradetopass' => $gradedata['gradetopass'] ?? null,
+            'bestgrade' => $bestgrade
+        ];
+    }
+
+    /**
+     * Get the attempt data.
+     * @param \quiz_attempt $attemptobj
+     * @return array of attempt data such as feedback, scaled grade, and marks sum
+     */
+    private static function get_attempt_data(\quiz_attempt $attemptobj): array {
+        // Get the attempt grade, replacing 'not yet graded' with zero.
+        $summarks = $attemptobj->get_sum_marks();
+        $attemptgrade = quiz_rescale_grade($summarks, $attemptobj->get_quiz(), false);
+        $attemptgrade = gettype($attemptgrade) == 'string' ? 0 : $attemptgrade;
+        $attemptfeedback = $attemptobj->get_overall_feedback($attemptgrade);
+
+        // Get the required grade to pass to determine if the user has passed or not.
+        $bestgradedata = \mod_quiz_external::get_user_best_grade($attemptobj->get_quizid(), $attemptobj->get_userid());
+
+        // This must be set otherwise we cannot determine if the user has 'passed' or not.
+        if (isset($bestgradedata['gradetopass'])) {
+            $gradetopass = (float) $bestgradedata['gradetopass'];
+            $passed = $attemptgrade >= $gradetopass;
+        } else {
+            $passed = null;
+        }
+
+        return [
+            'summarks' => $summarks,
+            'scaledgrade' => $attemptgrade,
+            'feedback' => $attemptfeedback,
+            'passed' => $passed
+        ];
+    }
+
+    /**
      * Gets the review data for the given attempt. Based on \mod_quiz_external::get_attempt_review.
      * @param int $attemptid ID of the quiz_attempt
      * @return array of question data with containing responses.
      */
     private static function get_attempt_review_data(int $attemptid): array {
-        // Enforce page to be the first page (zero indexed, here).
+        global $PAGE;
+        $review = true;
         $page = 0;
-        $review = false;
 
+        // Cannot use \mod_quiz_external::get_attempt_review here since it enforces that the attempt be finished.
         $attemptobj = \quiz_attempt::create($attemptid);
         $displayoptions = $attemptobj->get_display_options($review);
         $slots = $attemptobj->get_slots($page);
+        $renderer = $PAGE->get_renderer('mod_quiz');
 
-        return array_map(function($slot) use ($attemptobj, $displayoptions) {
+        return array_map(function($slot) use ($attemptobj, $displayoptions, $review, $renderer, $PAGE) {
             $qattempt = $attemptobj->get_question_attempt($slot);
-
-            // Get the necessary data.
-            $qmark = $attemptobj->get_question_mark($slot);
-            $mark = $qmark !== "" ? $qmark : null;
 
             $lastqtdata = $qattempt->get_last_qt_data();
             $data = !empty($lastqtdata) ? json_encode($lastqtdata) : null;
 
             $questionid = $qattempt->get_question_id();
 
-            // An example of a non-real question is a description.
+            // An example of a non-real question is a description 'question'.
             if ($attemptobj->is_real_question($slot)) {
                 $state = (string) $attemptobj->get_question_state($slot);
                 $status = $attemptobj->get_question_status($slot, $displayoptions->correctness);
             }
+
+            $html = $attemptobj->render_question($slot, $review, $renderer);
+
+            $slot = $qattempt->get_slot();
+
+            $sequencecheck = $qattempt->get_sequence_check_count();
+
+            // Get the various feedback responses.
+            $question = $qattempt->get_question();
+            $qrenderer = $question->get_renderer($PAGE);
+            $feedback = $qrenderer->feedback($qattempt, $displayoptions);
+
+            $qmark = $attemptobj->get_question_mark($slot);
+            $mark = $qmark !== "" ? (float) $qmark : null;
 
             return [
                 'mark' => $mark,
                 'data' => $data,
                 'state' => $state ?? null,
                 'status' => $status ?? null,
-                'questionid' => $questionid
+                'questionid' => (int) $questionid,
+                'html' => $html,
+                'slot' => (int) $slot,
+                'sequencecheck' => (int) $sequencecheck,
+                'feedback' => $feedback
             ];
         }, $slots);
     }
@@ -189,17 +263,26 @@ class api {
      * @param object $user
      * @param object $quiz
      * @param int $attemptnumber attempt number (must be unique for this user and quiz)
+     * @param object $prevattempt the previous attempt, required if $attemptonlast is enabled for the quiz.
      * @return object attempt object
      */
-    private static function start_attempt(object $user, object $quiz, int $attemptnumber): object {
+    private static function start_attempt(object $user, object $quiz, int $attemptnumber, ?object $prevattempt): object {
         $quizobj = \quiz::create($quiz->instance);
 
         $quba = \question_engine::make_questions_usage_by_activity('mod_quiz', $quizobj->get_context());
         $quba->set_preferred_behaviour($quizobj->get_quiz()->preferredbehaviour);
         $timenow = time();
 
-        $attempt = quiz_create_attempt($quizobj, $attemptnumber, false, $timenow, false, $user->id);
-        quiz_start_new_attempt($quizobj, $quba, $attempt, $attemptnumber, $timenow);
+        $attempt = quiz_create_attempt($quizobj, $attemptnumber, $prevattempt, $timenow, false, $user->id);
+
+        // If build on last attempt is enabled, we need to call a different function.
+        // Otherwise the previous answers will not be saved.
+        if ($quizobj->get_quiz()->attemptonlast && !empty($prevattempt)) {
+            quiz_start_attempt_built_on_last($quba, $attempt, $prevattempt);
+        } else {
+            quiz_start_new_attempt($quizobj, $quba, $attempt, $attemptnumber, $timenow);
+        }
+
         quiz_attempt_save_started($quizobj, $quba, $attempt);
         return $attempt;
     }
@@ -336,22 +419,26 @@ class api {
 
     /**
      * Organises the given data into the response structure.
-     * @param object $quiz
-     * @param object $user
-     * @param object $attempt
-     * @param array $attemptreview
-     * @param array $grade
-     * @param array $questions
+     * @param object $quiz quiz object
+     * @param object $user user object
+     * @param object $attempt attempt object
+     * @param array $attemptresponses array of responses to the quiz for this attempt
+     * @param array $questions array of questions for this quiz
+     * @param array $attemptdata array containing data about attempt (grade, feedback, etc..)
+     * @param array $quizgradedata the grade data for the quiz (best grade, passing grade, etc..)
      */
-    private static function format_response(object $quiz, object $user, object $attempt, array $attemptreview, array $grade,
-        array $questions): object {
+    private static function format_response(object $quiz, object $user, object $attempt, array $attemptresponses, array $questions,
+        array $attemptdata, array $quizgradedata): object {
 
         // Clean the question data.
         $cleanedquestions = array_map(function($q) {
             return [
-                'id' => $q->id,
+                'id' => (int) $q->id,
                 'name' => $q->name,
-                'questiontext' => $q->questiontext
+                'questiontext' => $q->questiontext,
+                'options' => json_encode($q->options),
+                'type' => $q->qtype,
+                'slot' => (int) $q->slotid
             ];
         }, $questions);
 
@@ -363,16 +450,21 @@ class api {
             'quiz' => [
                 'id' => (int) $quiz->instance,
                 'cmid' => (int) $quiz->id,
-                'passinggrade' => $grade['gradetopass'] ?? null,
-                'questions' => array_values($cleanedquestions)
+                'gradetopass' => isset($quizgradedata['gradetopass']) ? (float) $quizgradedata['gradetopass'] : null,
+                'name' => $quiz->name,
+                'questions' => array_values($cleanedquestions),
+                'bestgrade' => $quizgradedata['bestgrade'] ?? null,
             ],
             'attempt' => [
                 'id' => (int) $attempt->id,
+                'feedback' => $attemptdata['feedback'],
+                'summarks' => (float) $attemptdata['summarks'],
+                'scaledgrade' => (float) $attemptdata['scaledgrade'],
+                'passed' => $attemptdata['passed'],
                 'state' => $attempt->state,
                 'timestart' => (int) $attempt->timestart,
                 'timemodified' => (int) $attempt->timemodified,
-                'grade' => $grade['grade'] ?? null,
-                'responses' => $attemptreview,
+                'responses' => $attemptresponses,
                 'number' => (int) $attempt->attempt
             ]
         ];
