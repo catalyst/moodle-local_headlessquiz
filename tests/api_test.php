@@ -27,8 +27,6 @@ namespace local_headlessquiz;
  */
 class api_test extends \advanced_testcase {
     public function setUp(): void {
-        global $DB;
-
         $this->setAdminUser();
         $this->resetAfterTest(true);
 
@@ -47,6 +45,13 @@ class api_test extends \advanced_testcase {
         $this->question = $this->qsg->create_question(\local_headlessquiz\api::SUPPORTED_QTYPES[0], null,
             ['category' => $this->category->id]);
         quiz_add_quiz_question($this->question->id, $this->quiz);
+
+        // Load the questions from the quiz so they get quiz related data (slot, etc..).
+        $quizobj = \quiz::create($this->quiz->id);
+        $quizobj->preload_questions();
+        $quizobj->load_questions();
+        $questions = $quizobj->get_questions();
+        $this->question = current($questions);
     }
 
     /**
@@ -84,6 +89,96 @@ class api_test extends \advanced_testcase {
     }
 
     /**
+     * Builds the expected return using the data set in $this context
+     * @param object $attempt attempt stdClass data
+     * @param array $responses array of responses, or null to use default response (a 'todo' response).
+     * @return object expected response output - compared against the return from the api function.
+     */
+    private function get_expected_response(object $attempt, ?array $responses): object {
+        $attemptreview = \mod_quiz_external::get_attempt_review($attempt->id);
+
+        // If expected responses are not given, add the default response.
+        if ($responses === null) {
+            $questionreview = (object) array_pop($attemptreview['questions']);
+            $responses = [
+                [
+                    'questionid' => (int) $this->question->id,
+                    'state' => (string) \question_state::get('todo'),
+                    'status' => 'Not yet answered',
+                    'mark' => null,
+                    'data' => null,
+                    'slot' => (int) $this->question->slot,
+                    'sequencecheck' => $questionreview->sequencecheck,
+                    'html' => '',
+                    'feedback' => ''
+                ]
+            ];
+        }
+
+        // Build expected return.
+        return (object) [
+            'user' => [
+                'id' => (int) $this->user->id
+            ],
+            'quiz' => [
+                'id' => (int) $this->quiz->id,
+                'name' => $this->quiz->name,
+                'cmid' => (int) $this->quiz->cmid,
+                'gradetopass' => 50.0,
+                'bestgrade' => null,
+                'questions' => [
+                    [
+                        'id' => (int) $this->question->id,
+                        'name' => $this->question->name,
+                        'questiontext' => $this->question->questiontext,
+                        'type' => 'shortanswer',
+                        'options' => [],
+                        'slot' => (int) $this->question->slotid
+                    ]
+                ]
+            ],
+            'attempt' => [
+                'id' => (int) $attempt->id,
+                'state' => $attempt->state,
+                'feedback' => '',
+                'timestart' => (int) $attempt->timestart,
+                'timemodified' => (int) $attempt->timemodified,
+                'summarks' => 0.0,
+                'scaledgrade' => 0.0,
+                'passed' => false,
+                'number' => (int) $attempt->attempt,
+                'responses' => [...$responses]
+            ]
+        ];
+    }
+
+    /**
+     * Strips parts from a response that we don't test.
+     * For e.g, question attempt html.
+     * @param object $data response data
+     * @return object cleaned data
+     */
+    private function strip_ignored_response_parts($data) {
+        // Clean the response data. Currently, this only cleans the HTML.
+        // This is because every time the HTML is generated, it has different values because of timestamps and random ID values.
+        // So it is silly to compare it by value, so instead we compare by existence.
+        $data->attempt['responses'] = array_map(function($r) {
+            // Return '' if it existed, so we can still check the existence, just not the exact value.
+            $r['html'] = isset($r['html']) ? '' : null;
+            $r['feedback'] = isset($r['feedback']) ? '' : null;
+            return $r;
+        }, $data->attempt['responses']);
+
+        // Strip 'options' (aka settings) from the questions.
+        $data->quiz['questions'] = array_map(function($q) {
+            $q['options'] = [];
+            return $q;
+        }, $data->quiz['questions']);
+
+        return $data;
+    }
+
+    /**
      * Tests getting the headless quiz with no previous attempt for a user
      * Expects a new attempt to be created.
      */
@@ -101,42 +196,10 @@ class api_test extends \advanced_testcase {
         $attempt = array_pop($attempts);
         $this->assertFalse(empty($attempt));
 
-        $expectedata = (object) [
-            'user' => [
-                'id' => (int) $this->user->id
-            ],
-            'quiz' => [
-                'id' => (int) $this->quiz->id,
-                'cmid' => (int) $this->quiz->cmid,
-                'passinggrade' => 50.00000,
-                'questions' => [
-                    [
-                        'id' => (int) $this->question->id,
-                        'name' => $this->question->name,
-                        'questiontext' => $this->question->questiontext
-                    ]
-                ]
-            ],
-            'attempt' => [
-                'id' => (int) $attempt->id,
-                'state' => $attempt->state,
-                'timestart' => (int) $attempt->timestart,
-                'timemodified' => (int) $attempt->timemodified,
-                'grade' => null,
-                'number' => 1,
-                'responses' => [
-                    [
-                        'questionid' => $this->question->id,
-                        'state' => \question_state::get('todo'),
-                        'status' => 'Not yet answered',
-                        'mark' => null,
-                        'data' => null
-                    ]
-                ]
-            ]
-        ];
+        $expectedata = $this->get_expected_response($attempt, null);
+        $datacleaned = $this->strip_ignored_response_parts($res->data);
 
-        $this->assertEquals($expectedata, $res->data);
+        $this->assertEquals($expectedata, $datacleaned);
     }
 
     /**
@@ -160,42 +223,10 @@ class api_test extends \advanced_testcase {
         $attempt = array_pop($attempts);
         $this->assertFalse(empty($attempt));
 
-        $expectedata = (object) [
-            'user' => [
-                'id' => (int) $this->user->id
-            ],
-            'quiz' => [
-                'id' => (int) $this->quiz->id,
-                'cmid' => (int) $this->quiz->cmid,
-                'passinggrade' => 50.00000,
-                'questions' => [
-                    [
-                        'id' => (int) $this->question->id,
-                        'name' => $this->question->name,
-                        'questiontext' => $this->question->questiontext
-                    ]
-                ]
-            ],
-            'attempt' => [
-                'id' => (int) $attempt->id,
-                'state' => $attempt->state,
-                'timestart' => (int) $attempt->timestart,
-                'timemodified' => (int) $attempt->timemodified,
-                'grade' => null,
-                'number' => 1,
-                'responses' => [
-                    [
-                        'questionid' => $this->question->id,
-                        'state' => \question_state::get('todo'),
-                        'status' => 'Not yet answered',
-                        'mark' => null,
-                        'data' => null
-                    ]
-                ]
-            ]
-        ];
+        $expectedata = $this->get_expected_response($attempt, null);
+        $datacleaned = $this->strip_ignored_response_parts($res->data);
 
-        $this->assertEquals($expectedata, $res->data);
+        $this->assertEquals($expectedata, $datacleaned);
     }
 
     /**
@@ -208,6 +239,7 @@ class api_test extends \advanced_testcase {
 
         // Answer the question and finish the attempt.
         $attemptobj = $this->finish_attempt($attemptobj, [ 1 => ['answer' => 'test' ]]);
+        $attempt = $attemptobj->get_attempt();
 
         // Get quiz made in setUp(), forcenew = false.
         $res = \local_headlessquiz\api::get_headless_quiz($this->quiz->cmid, $this->user->id, false);
@@ -218,43 +250,30 @@ class api_test extends \advanced_testcase {
         // Verify no errors returned.
         $this->assertFalse(isset($res->error));
 
-        // Verify the expected data is returned.
-        $expectedata = (object) [
-            'user' => [
-                'id' => $this->user->id
-            ],
-            'quiz' => [
-                'id' => $this->quiz->id,
-                'cmid' => $this->quiz->cmid,
-                'passinggrade' => 50.00000,
-                'questions' => [
-                    [
-                        'id' => $this->question->id,
-                        'name' => $this->question->name,
-                        'questiontext' => $this->question->questiontext
-                    ]
-                ]
-            ],
-            'attempt' => [
-                'id' => (int) $attemptobj->get_attempt()->id,
-                'state' => $attemptobj->get_attempt()->state,
-                'timestart' => (int) $attemptobj->get_attempt()->timestart,
-                'timemodified' => (int) $attemptobj->get_attempt()->timemodified,
-                'grade' => 0,
-                'number' => 1,
-                'responses' => array_map(function($r) {
-                    return([
-                        'questionid' => (int) $this->question->id,
-                        'state' => $r['state'],
-                        'status' => $r['status'],
-                        'mark' => $r['mark'],
-                        'data' => '{"answer":"test"}'
-                    ]);
-                }, $responses)
-            ]
-        ];
+        $expectedresponses = array_map(function($r) use($attemptobj) {
+            // Get the latest step to get the attempt response data.
+            $qattempt = $attemptobj->get_question_attempt((int) $r['slot']);
+            $lastqtdata = $qattempt->get_last_qt_data();
+            $data = !empty($lastqtdata) ? $lastqtdata : null;
 
-        $this->assertEquals($expectedata, $res->data);
+            return([
+                'questionid' => (int) $this->question->id,
+                'state' => $r['state'],
+                'status' => $r['status'],
+                'mark' => $r['mark'],
+                'data' => json_encode($data),
+                'slot' => (int) $r['slot'],
+                'sequencecheck' => (int) $r['sequencecheck'],
+                'html' => $r['html']
+            ]);
+        }, $responses);
+
+        $expecteddata = $this->get_expected_response($attempt, $expectedresponses);
+
+        $datacleaned = $this->strip_ignored_response_parts($res->data);
+        $expectedatacleaned = $this->strip_ignored_response_parts($expecteddata);
+
+        $this->assertEquals($expectedatacleaned, $datacleaned);
     }
 
     /**
@@ -276,54 +295,22 @@ class api_test extends \advanced_testcase {
         $attempt = array_pop($attempts);
         $this->assertFalse(empty($attempt));
 
-        $expectedata = (object) [
-            'user' => [
-                'id' => (int) $this->user->id
-            ],
-            'quiz' => [
-                'id' => (int) $this->quiz->id,
-                'cmid' => (int) $this->quiz->cmid,
-                'passinggrade' => 50.00000,
-                'questions' => [
-                    [
-                        'id' => (int) $this->question->id,
-                        'name' => $this->question->name,
-                        'questiontext' => $this->question->questiontext
-                    ]
-                ]
-            ],
-            'attempt' => [
-                'id' => (int) $attempt->id,
-                'state' => $attempt->state,
-                'timestart' => (int) $attempt->timestart,
-                'timemodified' => (int) $attempt->timemodified,
-                'grade' => null,
-                'number' => 1,
-                'responses' => [
-                    [
-                        'questionid' => (int) $this->question->id,
-                        'state' => \question_state::get('todo'),
-                        'status' => 'Not yet answered',
-                        'mark' => null,
-                        'data' => null
-                    ]
-                ]
-            ]
-        ];
+        $expectedata = $this->get_expected_response($attempt, null);
+        $datacleaned = $this->strip_ignored_response_parts($res->data);
 
-        $this->assertEquals($expectedata, $res->data);
+        $this->assertEquals($expectedata, $datacleaned);
     }
 
     /**
      * Tests with $forcenew=true getting the headless quiz with a previous inprogress attempt
-     * Expects a new attempt to be created and the previous one to be abandonded.
+     * Expects a new attempt to be created and the previous one to be finished.
      */
     public function test_with_inprogress_previous_attempt_forcenew() {
         // Quiz is already made in setup. Start an attempt here (outside of the API).
         $this->start_attempt();
 
         // Get quiz made in setUp(), forcenew = true.
-        // Should abandon the previous attempt and start a new one.
+        // Should finish the previous attempt and start a new one.
         $res = \local_headlessquiz\api::get_headless_quiz($this->quiz->cmid, $this->user->id, true);
 
         // Verify no errors returned.
@@ -333,48 +320,16 @@ class api_test extends \advanced_testcase {
         $attempts = array_values(quiz_get_user_attempts($this->quiz->id, $this->user->id, 'all'));
         $this->assertCount(2, $attempts);
 
-        $abandondedattempt = $attempts[0];
-        $this->assertEquals('abandoned', $abandondedattempt->state);
+        $finishedattempt = $attempts[0];
+        $this->assertEquals('finished', $finishedattempt->state);
 
         $newattempt = $attempts[1];
         $this->assertFalse(empty($newattempt));
 
-        $expectedata = (object) [
-            'user' => [
-                'id' => (int) $this->user->id
-            ],
-            'quiz' => [
-                'id' => (int) $this->quiz->id,
-                'cmid' => (int) $this->quiz->cmid,
-                'passinggrade' => 50.00000,
-                'questions' => [
-                    [
-                        'id' => (int) $this->question->id,
-                        'name' => $this->question->name,
-                        'questiontext' => $this->question->questiontext
-                    ]
-                ]
-            ],
-            'attempt' => [
-                'id' => (int) $newattempt->id,
-                'state' => $newattempt->state,
-                'timestart' => (int) $newattempt->timestart,
-                'timemodified' => (int) $newattempt->timemodified,
-                'grade' => null,
-                'number' => 2,
-                'responses' => [
-                    [
-                        'questionid' => (int) $this->question->id,
-                        'state' => \question_state::get('todo'),
-                        'status' => 'Not yet answered',
-                        'mark' => null,
-                        'data' => null
-                    ]
-                ]
-            ]
-        ];
+        $expectedata = $this->get_expected_response($newattempt, null);
+        $datacleaned = $this->strip_ignored_response_parts($res->data);
 
-        $this->assertEquals($expectedata, $res->data);
+        $this->assertEquals($expectedata, $datacleaned);
     }
 
     /**
@@ -403,41 +358,29 @@ class api_test extends \advanced_testcase {
         $newattempt = $attempts[1];
         $this->assertFalse(empty($newattempt));
 
-        $expectedata = (object) [
-            'user' => [
-                'id' => (int) $this->user->id
-            ],
-            'quiz' => [
-                'id' => (int) $this->quiz->id,
-                'cmid' => (int) $this->quiz->cmid,
-                'passinggrade' => 50.00000,
-                'questions' => [
-                    [
-                        'id' => (int) $this->question->id,
-                        'name' => $this->question->name,
-                        'questiontext' => $this->question->questiontext
-                    ]
-                ]
-            ],
-            'attempt' => [
-                'id' => (int) $newattempt->id,
-                'state' => $newattempt->state,
-                'timestart' => (int) $newattempt->timestart,
-                'timemodified' => (int) $newattempt->timemodified,
-                'grade' => 0.0,
-                'number' => 2,
-                'responses' => [
-                    [
-                        'questionid' => (int) $this->question->id,
-                        'state' => \question_state::get('todo'),
-                        'status' => 'Not yet answered',
-                        'mark' => null,
-                        'data' => null
-                    ]
-                ]
-            ]
-        ];
+        $expectedata = $this->get_expected_response($newattempt, null);
+        $datacleaned = $this->strip_ignored_response_parts($res->data);
 
-        $this->assertEquals($expectedata, $res->data);
+        $this->assertEquals($expectedata, $datacleaned);
+    }
+
+    /**
+     * Tests using forcenew where builonlast is enabled.
+     */
+    public function test_with_buildonlast_forcenew() {
+        // Update the quiz in the constructor to have this setting enabled.
+        global $DB;
+        $this->quiz->attemptonlast = true;
+        $DB->update_record('quiz', $this->quiz);
+        $quizobj = \quiz::create($this->quiz->id);
+        $this->assertEquals('1', $quizobj->get_quiz()->attemptonlast);
+
+        // Call to start an attempt.
+        $res = \local_headlessquiz\api::get_headless_quiz($this->quiz->cmid, $this->user->id);
+        $this->assertTrue(isset($res->data));
+
+        // Then start a new attempt with forcenew.
+        $res = \local_headlessquiz\api::get_headless_quiz($this->quiz->cmid, $this->user->id, true);
+        $this->assertTrue(isset($res->data));
     }
 }
