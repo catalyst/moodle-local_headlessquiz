@@ -16,10 +16,13 @@
 
 namespace local_headlessquiz;
 
+use qtype_random;
+
 defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->dirroot . '/mod/quiz/attemptlib.php');
 require_once($CFG->dirroot . '/mod/quiz/accessmanager.php');
+require_once($CFG->libdir . '/gradelib.php');
 
 /**
  * Headless quiz api class
@@ -47,7 +50,8 @@ class api {
     public const SUPPORTED_QTYPES = [
         'shortanswer',
         'truefalse',
-        'multichoice'
+        'multichoice',
+        'random'
     ];
 
     /**
@@ -97,7 +101,7 @@ class api {
             $attemptobj = \quiz_attempt::create($attempt->id);
 
             // Get attempt review data (attempts, grade, state, status, etc...).
-            $attemptquestionreview = self::get_attempt_review_data($attempt->id);
+            $attemptreview = self::get_attempt_review_data($attempt->id);
 
             // Get all the quiz questions.
             $quizobj->preload_questions();
@@ -105,15 +109,14 @@ class api {
             $questions = $quizobj->get_questions();
 
             // Get the attempt feedback.
-            $attemptdata = self::get_attempt_data($attemptobj);
+            $attemptfeedback = self::get_attempt_data($attemptobj);
 
             // Get the quiz grade data from the gradebook.
             $gradedata = self::get_grade_data($quizobj, $userid);
 
             // Format and return the response.
             return (object) [
-                'data' => self::format_response($quiz, $user, $attempt, $attemptquestionreview, $questions, $attemptdata,
-                    $gradedata)
+                'data' => self::format_response($quiz, $user, $attempt, $attemptreview, $attemptfeedback, $gradedata, $questions)
             ];
         } catch (\Exception $e) {
             // Unhandled error, return error message.
@@ -139,10 +142,12 @@ class api {
         $attempts = quiz_get_user_attempts($quizobj->get_quizid(), $userid);
         $bestgrade = quiz_calculate_best_grade($quizobj->get_quiz(), $attempts);
         $bestgrade = quiz_rescale_grade($bestgrade, $quizobj->get_quiz(), false);
+        $gradeitem = (object) grade_get_grades($quizobj->get_courseid(), 'mod', 'quiz', $quizobj->get_quizid(), $userid);
 
         return [
             'gradetopass' => $gradedata['gradetopass'] ?? null,
-            'bestgrade' => $bestgrade
+            'bestgrade' => $bestgrade ?? null,
+            'maxgrade' => !empty($gradeitem->items) ? (float) $gradeitem->items[0]->grademax : null
         ];
     }
 
@@ -356,18 +361,79 @@ class api {
         }
 
         // Are any of the questions a disallowed qtype ?
-        $invalidqtypequestions = array_filter($questions, function($q) {
-            return !in_array($q->qtype, self::SUPPORTED_QTYPES);
-        });
-
-        if (!empty($invalidqtypequestions)) {
+        if (self::contains_invalid_qtype($questions)) {
             return self::form_validation_error('invalidqtype');
         }
 
         // This won't get every single possible case, but it covers the most common ones.
+        if (self::contains_invalid_q_contents($questions)) {
+            return self::form_validation_error('invalidqcontent');
+        }
+
+        // Return valid, no error.
+        return [true, null];
+    }
+
+    /**
+     * Determines if the array of questions contains an invalid qtype.
+     * If a qtype is 'random', it recursively checks the linked category question types.
+     *
+     * @param array $questions array of questions
+     * @return bool true if contains an invalid question, else false.
+     */
+    private static function contains_invalid_qtype(array $questions): bool {
+        $invalidqtypequestions = array_filter($questions, function($q) {
+
+            // Can either come in as string or qtype class, in that case call func to get the name.
+            $qtypestr = is_string($q->qtype) ? $q->qtype : $q->qtype->name();
+
+            if (!in_array((string) $qtypestr, self::SUPPORTED_QTYPES)) {
+                return true;
+            };
+
+            // Check for random Qtype.
+            if ((string) $qtypestr == 'random') {
+                $randomqquestions = self::get_random_qtype_questions($q);
+
+                // Random Qtype not linked to any questions.
+                if (empty($randomqquestions)) {
+                    return true;
+                }
+
+                if (self::contains_invalid_qtype($randomqquestions)) {
+                    return true;
+                }
+            }
+
+            return false;
+        });
+        return count($invalidqtypequestions) > 0;
+    }
+
+    /**
+     * Determines if the array of questions contains a question with invalid contents
+     * If a qtype is 'random', it recursively checks the linked category questions' contents.
+     *
+     * @param array $questions array of questions
+     * @return bool true if contains an invalid question, else false.
+     */
+    private static function contains_invalid_q_contents(array $questions): bool {
         $invalidquestioncontents = array_filter($questions, function($q) {
-            // Question or contents is empty, which is invalid.
-            if (empty($q) || empty($q->questiontext)) {
+            $qtypestr = is_string($q->qtype) ? $q->qtype : $q->qtype->name();
+
+            // Question is empty it is invalid.
+            if (empty($q)) {
+                return true;
+            }
+
+            if ($qtypestr == 'random') {
+                // We don't validate random qtype directly, we validate all the linked questions.
+                $linkedquestions = self::get_random_qtype_questions($q);
+                return self::contains_invalid_q_contents($linkedquestions);
+            }
+
+            // No question text - invalid.
+            if (empty($q->questiontext)) {
                 return true;
             }
 
@@ -386,12 +452,28 @@ class api {
             return in_array(1, $checks);
         });
 
-        if (!empty($invalidquestioncontents)) {
-            return self::form_validation_error('invalidqcontent');
-        }
+        return count($invalidquestioncontents) > 0;
+    }
 
-        // Return valid, no error.
-        return [true, null];
+    /**
+     * Gets the questions linked to the random question.
+     *
+     * @param object $randomq the question that is of qtype 'random'
+     * @return array array of questions linked to this random question.
+     */
+    private static function get_random_qtype_questions(object $randomq) {
+        $conditions = json_decode($randomq->filtercondition);
+        $categoryid = $conditions->questioncategoryid;
+        $includesub = $conditions->includingsubcategories;
+
+        // Find the linked questions to this random qtype.
+        $qtyperandom = \question_bank::get_qtype('random');
+        $questionids = $qtyperandom->get_available_questions_from_category($categoryid, $includesub);
+        $questions = array_map(function($questionid) {
+            return \question_bank::load_question($questionid);
+        }, $questionids);
+
+        return $questions;
     }
 
     /**
@@ -419,24 +501,35 @@ class api {
 
     /**
      * Organises the given data into the response structure.
+     *
      * @param object $quiz quiz object
      * @param object $user user object
-     * @param object $attempt attempt object
-     * @param array $attemptresponses array of responses to the quiz for this attempt
+     * @param object $attempt attempt object (id, etc...)
+     * @param array $attemptreview attempt review (responses to questions)
+     * @param array $attemptfeedback attempt feedback (feedback string, grade, marks)
+     * @param array $grade grade data (grade to pass, max grade)
      * @param array $questions array of questions for this quiz
-     * @param array $attemptdata array containing data about attempt (grade, feedback, etc..)
-     * @param array $quizgradedata the grade data for the quiz (best grade, passing grade, etc..)
      */
-    private static function format_response(object $quiz, object $user, object $attempt, array $attemptresponses, array $questions,
-        array $attemptdata, array $quizgradedata): object {
+    private static function format_response(object $quiz, object $user, object $attempt, array $attemptreview,
+        array $attemptfeedback, array $grade, array $questions): object {
 
         // Clean the question data.
-        $cleanedquestions = array_map(function($q) {
+        $cleanedquestions = array_map(function($q) use($attempt) {
+            // If the qtype is random, we need to find the question
+            // that was randomly chosen for this attempt.
+            if ($q->qtype == "random") {
+                $attemptobj = \quiz_attempt::create($attempt->id);
+                $qattempt = $attemptobj->get_question_attempt($q->slot);
+                $realquestionid = $qattempt->get_question_id();
+                $q = \question_bank::load_question_data($realquestionid);
+                $q->slotid = $qattempt->get_slot();
+            }
+
             return [
                 'id' => (int) $q->id,
                 'name' => $q->name,
                 'questiontext' => $q->questiontext,
-                'options' => json_encode($q->options),
+                'options' => isset($q->options) ? json_encode($q->options) : null,
                 'type' => $q->qtype,
                 'slot' => (int) $q->slotid
             ];
@@ -449,22 +542,23 @@ class api {
             ],
             'quiz' => [
                 'id' => (int) $quiz->instance,
-                'cmid' => (int) $quiz->id,
-                'gradetopass' => isset($quizgradedata['gradetopass']) ? (float) $quizgradedata['gradetopass'] : null,
                 'name' => $quiz->name,
+                'cmid' => (int) $quiz->id,
+                'gradetopass' => $grade['gradetopass'],
                 'questions' => array_values($cleanedquestions),
-                'bestgrade' => $quizgradedata['bestgrade'] ?? null,
+                'maxgrade' => $grade['maxgrade'],
+                'bestgrade' => $grade['bestgrade']
             ],
             'attempt' => [
                 'id' => (int) $attempt->id,
-                'feedback' => $attemptdata['feedback'],
-                'summarks' => (float) $attemptdata['summarks'],
-                'scaledgrade' => (float) $attemptdata['scaledgrade'],
-                'passed' => $attemptdata['passed'],
+                'feedback' => $attemptfeedback['feedback'],
+                'summarks' => (float) $attemptfeedback['summarks'],
+                'scaledgrade' => (float) $attemptfeedback['scaledgrade'],
+                'passed' => $attemptfeedback['passed'],
                 'state' => $attempt->state,
                 'timestart' => (int) $attempt->timestart,
                 'timemodified' => (int) $attempt->timemodified,
-                'responses' => $attemptresponses,
+                'responses' => $attemptreview,
                 'number' => (int) $attempt->attempt
             ]
         ];

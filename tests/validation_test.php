@@ -129,6 +129,11 @@ class validation_test extends \advanced_testcase {
         $category = $this->qsg->create_question_category();
 
         foreach ($supportedtypes as $qtype) {
+            // Random qtype is handled by seperate tests.
+            if ($qtype == 'random') {
+                continue;
+            }
+
             // Create quiz with this question type.
             $quiz = $this->qg->create_instance(['course' => $this->course, 'grade' => 100.0, 'sumgrades' => 2,
                 'gradepass' => 50.0]);
@@ -149,7 +154,8 @@ class validation_test extends \advanced_testcase {
         // do not have test helper code, so instead we only select some examples for testing.
         foreach (self::UNSUPPORTED_TEST_QTYPES as $qtype) {
             // Create quiz with this question type.
-            $quiz = $this->qg->create_instance(['course' => $this->course]);
+            $quiz = $this->qg->create_instance(['course' => $this->course, 'grade' => 100.0, 'sumgrades' => 2,
+                'gradetopass' => 50.0]);
             $question = $this->qsg->create_question($qtype, null, ['category' => $category->id]);
             $DB->update_record('question', ['id' => $question->id, 'questiontext' => 'test']);
             quiz_add_quiz_question($question->id, $quiz);
@@ -162,6 +168,87 @@ class validation_test extends \advanced_testcase {
             $this->assertEquals(get_string('error:validation:invalidqtype', 'local_headlessquiz'), $res->error->message);
             $this->assertFalse(isset($res->data));
         }
+    }
+
+    /**
+     * Tests a quiz with a qtype_random question in it, that links to other questions.
+     * Ensures the qtype validation of the linked questions works as expected.
+     */
+    public function test_qtype_random_qtype_validation() {
+        global $DB;
+
+        // Create a 'good' category with allowed question types.
+        $goodcategory = $this->qsg->create_question_category();
+        $quiz = $this->qg->create_instance(['course' => $this->course, 'grade' => 100.0, 'sumgrades' => 2, 'gradetopass' => 50.0]);
+        $goodquestion1 = $this->qsg->create_question('truefalse', null, ['category' => $goodcategory->id]);
+        $DB->update_record('question', ['id' => $goodquestion1->id, 'questiontext' => 'test']);
+
+        // Add a random question for this category.
+        quiz_add_random_questions($quiz, 1, $goodcategory->id, 1, true);
+        $this->qsg->create_question('random', null, ['category' => $goodcategory->id]);
+
+        // Calling the API for this quiz should return success.
+        $res = \local_headlessquiz\api::get_headless_quiz($quiz->cmid, $this->user->id, true);
+        $this->assertTrue(isset($res->data));
+        $this->assertFalse(isset($res->error));
+
+        // Create a 'bad' category with both allowed + disallowed types.
+        $badcategory = $this->qsg->create_question_category();
+        $quiz = $this->qg->create_instance(['course' => $this->course, 'grade' => 100.0, 'sumgrades' => 2, 'gradetopass' => 50.0]);
+
+        $badquestion1 = $this->qsg->create_question(self::UNSUPPORTED_TEST_QTYPES[0], null, ['category' => $badcategory->id]);
+        $DB->update_record('question', ['id' => $badquestion1->id, 'questiontext' => 'test']);
+        $goodquestion2 = $this->qsg->create_question('truefalse', null, ['category' => $badcategory->id]);
+        $DB->update_record('question', ['id' => $goodquestion2->id, 'questiontext' => 'test']);
+
+        // A random question for the bad category.
+        quiz_add_random_questions($quiz, 1, $badcategory->id, 1, true);
+        $this->qsg->create_question('random', null, ['category' => $badcategory->id]);
+
+        // Calling the API for this quiz should return a validation error.
+        $res = \local_headlessquiz\api::get_headless_quiz($quiz->cmid, $this->user->id, true);
+        $this->assertFalse(isset($res->data));
+        $this->assertEquals(\local_headlessquiz\api::ERROR_VALIDATION, $res->error->type);
+        $this->assertEquals(get_string('error:validation:invalidqtype', 'local_headlessquiz'), $res->error->message);
+    }
+
+    /**
+     * Tests a quiz with a qtype_random question in it, that links to other questions.
+     * Ensures the contents validation of the linked questions works as expected.
+     */
+    public function test_qtype_random_contents_validation() {
+        global $DB;
+
+        // Create a 'good' category with questions with good contents in them.
+        $quiz = $this->qg->create_instance(['course' => $this->course, 'grade' => 100.0, 'sumgrades' => 2, 'gradetopass' => 50.0]);
+        $goodcategory = $this->qsg->create_question_category();
+        $goodquestion1 = $this->qsg->create_question('truefalse', null, ['category' => $goodcategory->id]);
+        $DB->update_record('question', ['id' => $goodquestion1->id, 'questiontext' => 'test.png']);
+
+        quiz_add_random_questions($quiz, 1, $goodcategory->id, 1, true);
+        $this->qsg->create_question('random', null, ['category' => $goodcategory->id]);
+
+        // Calling the API for this quiz should return success.
+        $res = \local_headlessquiz\api::get_headless_quiz($quiz->cmid, $this->user->id, true);
+        $this->assertTrue(isset($res->data));
+        $this->assertFalse(isset($res->error));
+
+        // Create a 'bad' category with questions with both good and non-allowed contents in it.
+        $quiz = $this->qg->create_instance(['course' => $this->course, 'grade' => 100.0, 'sumgrades' => 2, 'gradetopass' => 50.0]);
+        $badcategory = $this->qsg->create_question_category();
+        $goodquestion2 = $this->qsg->create_question('truefalse', null, ['category' => $badcategory->id]);
+        $DB->update_record('question', ['id' => $goodquestion2->id, 'questiontext' => 'test.png']);
+        $badquestion = $this->qsg->create_question('truefalse', null, ['category' => $badcategory->id]);
+        $DB->update_record('question', ['id' => $badquestion->id, 'questiontext' => '@@PLUGINFILE@@/interactive-video-2-618.h5p']);
+
+        quiz_add_random_questions($quiz, 1, $badcategory->id, 1, true);
+        $this->qsg->create_question('random', null, ['category' => $badcategory->id]);
+
+        // Calling the API for this quiz should return a validation error.
+        $res = \local_headlessquiz\api::get_headless_quiz($quiz->cmid, $this->user->id, true);
+        $this->assertFalse(isset($res->data));
+        $this->assertEquals(\local_headlessquiz\api::ERROR_VALIDATION, $res->error->type);
+        $this->assertEquals(get_string('error:validation:invalidqcontent', 'local_headlessquiz'), $res->error->message);
     }
 
     /**

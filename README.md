@@ -27,6 +27,7 @@ There is no interface to this plugin, it is interacted with purely via webservic
 			"cmid": 66,
 			"gradetopass": 5,
 			"bestgrade": 10,
+			"maxgrade": 15,
 			"questions": [
 				{
 					"id": 11,
@@ -153,8 +154,15 @@ This will call the `local_headlessquiz_get_attempt` relative to the user attache
 
 ## Limitations
 1. Only single page quizzes are supported
-2. Only a subset of question types are supported: `shortanswer`, `truefalse`, `multichoice`
+2. Only a subset of question types are supported: `shortanswer`, `truefalse`, `multichoice`, `random`
+3. Only plain question text is supported. For e.g. pluginfiles are not supported.
 
+### Note for `qtype_random`
+If using the random qtype, you must ensure all questions that it links to (via the selected category) are also of the supported question types and do not contain any non-plain question text.
+
+This also includes questions in a category that have been 'deleted' but are still used elsewhere - these appear greyed out when `Also show old questions` is selected in the category editor. 
+
+To fix this, use a new category or remove all usages of the question.
 ## Branches
 
 ![GitHub Workflow Status (branch)](https://img.shields.io/github/workflow/status/catalyst/moodle-local_headlessquiz/ci/MOODLE_400_STABLE?label=ci)
