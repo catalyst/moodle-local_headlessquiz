@@ -124,7 +124,8 @@ class api_test extends \advanced_testcase {
                 'id' => (int) $this->quiz->id,
                 'name' => $this->quiz->name,
                 'cmid' => (int) $this->quiz->cmid,
-                'gradetopass' => 50.0,
+                'gradetopass' => 50.00000,
+                'maxgrade' => 100.0,
                 'bestgrade' => null,
                 'questions' => [
                     [

@@ -77,6 +77,7 @@ class headless_quiz_api extends \external_api {
             'cmid' => new \external_value(PARAM_INT, 'Course module ID'),
             'gradetopass' => new \external_value(PARAM_FLOAT, 'Grade required to pass the quiz activity', VALUE_OPTIONAL, null),
             'bestgrade' => new \external_value(PARAM_FLOAT, 'The best grade a user has achieved in this quiz', VALUE_DEFAULT, null),
+            'maxgrade' => new \external_value(PARAM_FLOAT, 'Maximum grade possible', VALUE_OPTIONAL, null),
             'questions' => new \external_multiple_structure($questionstructure, 'Quiz Questions', VALUE_DEFAULT, [])
         ], 'Quiz');
 

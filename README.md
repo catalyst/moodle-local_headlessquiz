@@ -27,6 +27,7 @@ There is no interface to this plugin, it is interacted with purely via webservic
 			"cmid": 66,
 			"gradetopass": 5,
 			"bestgrade": 10,
+			"maxgrade": 15,
 			"questions": [
 				{
 					"id": 11,

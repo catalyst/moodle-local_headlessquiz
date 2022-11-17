@@ -139,10 +139,12 @@ class api {
         $attempts = quiz_get_user_attempts($quizobj->get_quizid(), $userid);
         $bestgrade = quiz_calculate_best_grade($quizobj->get_quiz(), $attempts);
         $bestgrade = quiz_rescale_grade($bestgrade, $quizobj->get_quiz(), false);
+        $gradeitem = (object) grade_get_grades($quizobj->get_courseid(), 'mod', 'quiz', $quizobj->get_quizid(), $userid);
 
         return [
             'gradetopass' => $gradedata['gradetopass'] ?? null,
-            'bestgrade' => $bestgrade
+            'bestgrade' => $bestgrade ?? null,
+            'maxgrade' => !empty($gradeitem->items) ? (float) $gradeitem->items[0]->grademax : null
         ];
     }
 
